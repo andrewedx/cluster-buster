@@ -6,7 +6,7 @@ from sklearn import datasets
 
 from features import *
 from clustering import *
-from resnet import compute_resnet50_descriptors
+from resnet import compute_dinov2_descriptors, compute_resnet50_descriptors
 from utils import *
 from constant import *
 
@@ -31,12 +31,14 @@ def pipeline():
 
     print("\n\n ##### Extraction de Features ######")
     print("- calcul features ResNet50...")
-    descriptors_resnet = compute_resnet50_descriptors(base_images)
-    print(f"descriptors_resnet shape: {descriptors_resnet.shape}")
+    # descriptors_resnet = compute_resnet50_descriptors(base_images)
+    descriptors_dino = compute_dinov2_descriptors(base_images)
+    # print(f"descriptors_resnet shape: {descriptors_resnet.shape}")
+    print(f"descriptors_dino shape: {descriptors_dino.shape}")
     
     print("- PCA dimensionality reduction (256 components)...")
     pca = PCA(n_components=32, whiten=False, random_state=42)
-    descriptors_resnet_pca = pca.fit_transform(descriptors_resnet)
+    descriptors_resnet_pca = pca.fit_transform(descriptors_dino)
     print(f"  Explained variance ratio: {pca.explained_variance_ratio_.sum():.4f}")
     
     print("- L2 normalization...")
@@ -67,7 +69,8 @@ def pipeline():
     df_resnet = create_df_to_export(
         x_3d_resnet,
         labels_true,
-        kmeans_resnet.labels_
+        kmeans_resnet.labels_,
+        base_images
     )
 
     if not os.path.exists(PATH_OUTPUT):
