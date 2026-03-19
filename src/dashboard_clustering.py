@@ -9,85 +9,33 @@ from constant import PATH_OUTPUT
 
 st.set_page_config(page_title="Cluster Buster Dashboard", layout="wide")
 
+
 # -----------------------------
-# Cached helpers
+# Helpers
 # -----------------------------
+def _make_output_filenames(feature: str, model: str) -> tuple[str, str]:
+    """
+    Convention:
+      save_clustering__<feature>__<model>.xlsx
+      save_metric__<feature>__<model>.xlsx
+    """
+    feature_key = feature.lower()
+    model_key = model.lower()
+    clustering_filename = f"save_clustering__{feature_key}__{model_key}.xlsx"
+    metric_filename = f"save_metric__{feature_key}__{model_key}.xlsx"
+    return clustering_filename, metric_filename
+
+
 @st.cache_data
-def load_clustering_df(filename: str) -> pd.DataFrame:
+def load_excel_df(filename: str) -> pd.DataFrame:
     path = os.path.join(PATH_OUTPUT, filename)
     return pd.read_excel(path)
 
 
-@st.cache_data
-def load_metric_df() -> pd.DataFrame:
-    """
-    Your updated pipeline writes only:
-      - save_metric_resnet.xlsx (one-row dataframe)
-
-    This loader keeps the door open for future descriptors by concatenating
-    any metric files that exist.
-    """
-    metric_files = []
-
-    # Current pipeline output:
-    metric_files.append(os.path.join(PATH_OUTPUT, "save_metric_resnet.xlsx"))
-
-    dfs = []
-    for f in metric_files:
-        if os.path.exists(f):
-            df = pd.read_excel(f)
-            dfs.append(df)
-
-    if not dfs:
-        return pd.DataFrame()
-
-    df_metric = pd.concat(dfs, ignore_index=True)
-
-    # Drop Excel index column if present
-    if "Unnamed: 0" in df_metric.columns:
-        df_metric = df_metric.drop(columns=["Unnamed: 0"])
-
-    return df_metric
-
-
-@st.cache_data
-def plot_metric(df_metric: pd.DataFrame):
-    if df_metric is None or df_metric.empty:
-        return None
-
-    # Find all numeric columns (metrics)
-    metric_cols = [col for col in df_metric.columns if df_metric[col].dtype in ['float64', 'int64'] and col != 'descriptor']
-    
-    if not metric_cols:
-        return None
-
-    # Get the first (and only) row as we're showing 1 descriptor + 1 model
-    row = df_metric.iloc[0]
-    
-    # Prepare data for radar chart
-    radar_data = pd.DataFrame({
-        'Metric': metric_cols,
-        'Value': [row[col] for col in metric_cols]
-    })
-    
-    # Create radar chart
-    fig = px.bar_polar(
-        radar_data,
-        r='Value',
-        theta='Metric',
-        title="Clustering Metrics Profile",
-        color_discrete_sequence=['#1f77b4']
-    )
-    fig.update_layout(
-        height=500,
-        polar=dict(
-            radialaxis=dict(
-                visible=True,
-                range=[0, 1]  # Assuming metrics are normalized 0-1
-            )
-        )
-    )
-    return fig
+def _drop_excel_index_col(df: pd.DataFrame) -> pd.DataFrame:
+    if df is not None and "Unnamed: 0" in df.columns:
+        return df.drop(columns=["Unnamed: 0"])
+    return df
 
 
 def _validate_cluster_df(df: pd.DataFrame) -> list[str]:
@@ -96,61 +44,101 @@ def _validate_cluster_df(df: pd.DataFrame) -> list[str]:
     return missing
 
 
+@st.cache_data
+def plot_metric(metric_df: pd.DataFrame):
+    """
+    Expects a 1-row dataframe with metric columns.
+    """
+    if metric_df is None or metric_df.empty:
+        return None
+
+    metric_df = _drop_excel_index_col(metric_df)
+
+    # Keep only numeric metrics
+    metric_cols = [
+        c for c in metric_df.columns
+        if c not in ("descriptor", "feature", "model")
+        and pd.api.types.is_numeric_dtype(metric_df[c])
+    ]
+    if not metric_cols:
+        return None
+
+    row = metric_df.iloc[0]
+    radar_data = pd.DataFrame({"Metric": metric_cols, "Value": [float(row[c]) for c in metric_cols]})
+
+    fig = px.bar_polar(
+        radar_data,
+        r="Value",
+        theta="Metric",
+        title="Clustering Metrics Profile",
+        color_discrete_sequence=["#1f77b4"],
+    )
+    fig.update_layout(
+        height=500,
+        polar=dict(radialaxis=dict(visible=True, range=[0, 1])),
+    )
+    return fig
+
+
 # -----------------------------
-# Load data
+# UI
 # -----------------------------
 st.title("Cluster Buster — Clustering Dashboard")
 
 with st.sidebar:
     st.header("Settings")
 
-    # Only RESNET is produced by your current pipeline snippet
-    descriptor = st.selectbox("Sélectionner un descripteur", ["RESNET50"])
+    # Dropdown 1: Feature extractor
+    feature = st.selectbox("Feature (descripteur)", ["RESNET50", "DINOV2", "GRAY_HISTOGRAM", "HOG"])
 
-# Load selected descriptor clustering results
-if descriptor == "RESNET50":
-    clustering_filename = "save_clustering_resnet_kmeans.xlsx"
-else:
-    clustering_filename = None
+    # Dropdown 2: Clustering model
+    model = st.selectbox("Clustering model", ["KMEANS"])
 
-df = load_clustering_df(clustering_filename)
+    clustering_filename, metric_filename = _make_output_filenames(feature, model)
 
-# Clean excel index column if present
-if "Unnamed: 0" in df.columns:
-    df = df.drop(columns=["Unnamed: 0"])
+st.caption(f"Output folder: {PATH_OUTPUT}")
+st.caption(f"Selected clustering file: {clustering_filename}")
+st.caption(f"Selected metric file: {metric_filename}")
+
+# -----------------------------
+# Load clustering file
+# -----------------------------
+clustering_path = os.path.join(PATH_OUTPUT, clustering_filename)
+if not os.path.exists(clustering_path):
+    st.error(
+        "Clustering file not found.\n\n"
+        f"Expected: {clustering_path}\n\n"
+        "Run the pipeline for this (feature, model) combination to generate it."
+    )
+    st.stop()
+
+df = load_excel_df(clustering_filename)
+df = _drop_excel_index_col(df)
 
 missing_cols = _validate_cluster_df(df)
 if missing_cols:
     st.error(
-        "Le fichier de clustering ne contient pas les colonnes requises pour la visualisation 3D.\n\n"
-        f"Colonnes manquantes: {missing_cols}\n\n"
-        f"Fichier chargé: {clustering_filename}"
+        "Clustering file is missing required columns for 3D visualization.\n\n"
+        f"Missing columns: {missing_cols}\n"
+        f"File: {clustering_filename}"
     )
     st.stop()
 
-# Ensure cluster is int-like for selector
-try:
-    clusters_sorted = sorted(pd.unique(df["cluster"]).tolist())
-except Exception:
-    clusters_sorted = list(range(10))
+clusters_sorted = sorted(pd.unique(df["cluster"]).tolist())
 
 with st.sidebar:
-    selected_cluster = st.selectbox("Sélectionner un Cluster", clusters_sorted)
+    selected_cluster = st.selectbox("Cluster", clusters_sorted)
 
 # -----------------------------
 # Tabs
 # -----------------------------
-tab1, tab2 = st.tabs(["Analyse par descripteur", "Analyse global"])
+tab1, tab2 = st.tabs(["Analyse par cluster", "Analyse globale"])
 
 # -----------------------------
-# Tab 1: Per descriptor analysis
+# Tab 1: Cluster view
 # -----------------------------
 with tab1:
-    st.subheader(f"Résultat de Clustering — Descripteur {descriptor}")
-    st.caption(f"Source: {os.path.join(PATH_OUTPUT, clustering_filename)}")
-
-    # 3D scatter
-    st.write(f"#### Visualisation 3D du clustering avec descripteur {descriptor}")
+    st.subheader(f"Clustering — Feature={feature}, Model={model}")
 
     fig = px.scatter_3d(
         df,
@@ -158,7 +146,7 @@ with tab1:
         y="y",
         z="z",
         color=df["cluster"].astype(str),
-        title=f"Clustering avec descripteur {descriptor}",
+        title=f"3D view — {feature} + {model}",
     )
     fig.update_traces(marker_size=3)
     st.plotly_chart(fig, use_container_width=True)
@@ -184,98 +172,84 @@ with tab1:
     )
     st.plotly_chart(fig2, use_container_width=True)
 
-    # Add label distribution chart
-    st.write("#### Distribution des labels dans ce cluster")
-    if 'label' in cluster_df.columns:
-        label_counts = cluster_df['label'].value_counts()
+    st.write(f"### Focus cluster {selected_cluster}")
+    cluster_df = df[df["cluster"] == selected_cluster]
+
+    # Label distribution if present
+    if "label" in cluster_df.columns:
+        label_counts = cluster_df["label"].value_counts()
         fig_dist = px.bar(
             x=label_counts.index,
             y=label_counts.values,
-            labels={'x': 'Label', 'y': 'Nombre d\'éléments'},
-            title=f"Distribution des labels - Cluster {selected_cluster}",
-            color=label_counts.index
+            labels={"x": "Label", "y": "Count"},
+            title=f"Label distribution — cluster {selected_cluster}",
         )
-        fig_dist.update_layout(height=400, showlegend=False)
         st.plotly_chart(fig_dist, use_container_width=True)
-    
-    st.write(f"**Total d'éléments dans ce cluster : {len(cluster_df)}**")
 
+    st.write(f"Elements in cluster: {len(cluster_df)}")
+    st.dataframe(cluster_df, use_container_width=True, hide_index=False)
 
-    # Display table
-    st.write("#### Elements du cluster")
-    st.dataframe(cluster_df.drop(columns=['image_path']), use_container_width=True, hide_index=False)
-    
-    # Pagination for images
-    st.write("#### Visualisation des images par page")
-    
-    # Pagination settings
-    images_per_page = st.selectbox("Images par page", [6, 9, 12, 15], index=1)
-    
-    total_images = len(cluster_df)
-    total_pages = (total_images + images_per_page - 1) // images_per_page
-    
-    # Initialize session state for page number
-    if 'current_page' not in st.session_state:
-        st.session_state.current_page = 0
-    
-    # Pagination controls (centered)
-    col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 1, 1])
-    with col2:
-        if st.button("← Previous"):
-            st.session_state.current_page = max(0, st.session_state.current_page - 1)
-    
-    with col3:
-        st.write(f"Page {st.session_state.current_page + 1} of {total_pages}")
-    
-    with col4:
-        if st.button("Next →"):
-            st.session_state.current_page = min(total_pages - 1, st.session_state.current_page + 1)
-    
-    # Calculate start and end indices for current page
-    start_idx = st.session_state.current_page * images_per_page
-    end_idx = min(start_idx + images_per_page, total_images)
-    page_data = cluster_df.iloc[start_idx:end_idx]
-    
-    # Display images in a grid 
-    cols = st.columns(4)
-    
-    for col_idx, (idx, row) in enumerate(page_data.iterrows()):
-        col = cols[col_idx % 4]
-        with col:
-            try:
-                image_path = row.get('image_path')
-                label = row.get('label', 'unknown')
-                
-                # Fix path separators to be consistent on Windows
-                if image_path:
-                    image_path = image_path.replace('/', '\\')
-                
+    # Images if image_path exists
+    if "image_path" in cluster_df.columns:
+        st.write("### Images (if available)")
+
+        images_per_page = st.selectbox("Images per page", [6, 9, 12, 15], index=1)
+        total_images = len(cluster_df)
+        total_pages = (total_images + images_per_page - 1) // images_per_page
+
+        if "current_page" not in st.session_state:
+            st.session_state.current_page = 0
+
+        col_prev, col_mid, col_next = st.columns([1, 2, 1])
+        with col_prev:
+            if st.button("← Previous"):
+                st.session_state.current_page = max(0, st.session_state.current_page - 1)
+        with col_mid:
+            st.write(f"Page {st.session_state.current_page + 1} / {max(total_pages,1)}")
+        with col_next:
+            if st.button("Next →"):
+                st.session_state.current_page = min(max(total_pages - 1, 0), st.session_state.current_page + 1)
+
+        start_idx = st.session_state.current_page * images_per_page
+        end_idx = min(start_idx + images_per_page, total_images)
+        page_data = cluster_df.iloc[start_idx:end_idx]
+
+        cols = st.columns(4)
+        for col_idx, (_, row) in enumerate(page_data.iterrows()):
+            col = cols[col_idx % 4]
+            with col:
+                image_path = row.get("image_path")
+                label = row.get("label", "unknown")
+
+                # cross-platform normalization
+                if isinstance(image_path, str):
+                    image_path = os.path.normpath(image_path)
+
                 if image_path and os.path.exists(image_path):
-                    img = Image.open(image_path)                    
-                    st.image(img, caption=f"{label} (ID: {idx})", use_column_width=True)
+                    img = Image.open(image_path)
+                    st.image(img, caption=str(label), use_column_width=True)
                 else:
-                    st.warning(f"Image not found")
-            except Exception as e:
-                st.error(f"Error: {e}")
-    
-    st.write(f"**Total d'éléments dans ce cluster : {len(cluster_df)}**")
+                    st.caption("Image not found")
 
 # -----------------------------
-# Tab 2: Global analysis (metrics)
+# Tab 2: Global metrics
 # -----------------------------
 with tab2:
-    st.subheader("Analyse Global des descripteurs")
+    st.subheader(f"Metrics — Feature={feature}, Model={model}")
 
-    df_metric = load_metric_df()
-    if df_metric.empty:
+    metric_path = os.path.join(PATH_OUTPUT, metric_filename)
+    if not os.path.exists(metric_path):
         st.warning(
-            "Aucun fichier de métriques trouvé. "
-            "Assurez-vous que la pipeline a généré output/save_metric_resnet.xlsx."
+            "Metric file not found.\n\n"
+            f"Expected: {metric_path}\n\n"
+            "Run the pipeline for this (feature, model) combination to generate it."
         )
     else:
+        df_metric = load_excel_df(metric_filename)
+        df_metric = _drop_excel_index_col(df_metric)
+
         fig_radar = plot_metric(df_metric)
         if fig_radar is not None:
             st.plotly_chart(fig_radar, use_container_width=True)
-        
-        st.write("## Métriques complètes")
+
         st.dataframe(df_metric, use_container_width=True)
