@@ -4,6 +4,7 @@ import os
 import pandas as pd
 
 from sklearn.preprocessing import LabelEncoder, normalize, StandardScaler
+from sklearn.cluster import SpectralClustering
 from sklearn.decomposition import PCA
 
 from features import *
@@ -14,7 +15,7 @@ from constant import *
 
 
 FEATURES = ["resnet50", "dinov2", "gray_histogram", "hog"]  # add new features here
-MODELS = ["kmeans"]  # add new clustering models here
+MODELS = ["kmeans", "spectral"]  # add new clustering models here
 
 
 def _make_output_filenames(feature: str, model: str) -> tuple[str, str]:
@@ -122,6 +123,21 @@ def _run_one(
         )
         clusterer.fit(descriptors_norm)
         labels_pred = clusterer.labels_
+
+    elif model == "spectral":
+        # SpectralClustering returns labels directly (no .fit_predict stored labels_)
+        # Note: n_neighbors must be < n_samples
+        n_neighbors = min(20, descriptors_norm.shape[0] - 1)
+
+        clusterer = SpectralClustering(
+            n_clusters=number_cluster,
+            affinity="nearest_neighbors",
+            n_neighbors=n_neighbors,
+            assign_labels="kmeans",
+            random_state=42,
+        )
+        labels_pred = clusterer.fit_predict(descriptors_norm)
+
     else:
         raise ValueError(f"Unknown model: {model}")
 

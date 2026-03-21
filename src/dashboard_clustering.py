@@ -89,10 +89,10 @@ with st.sidebar:
     st.header("Settings")
 
     # Dropdown 1: Feature extractor
-    feature = st.selectbox("Feature (descripteur)", ["RESNET50", "DINOV2", "GRAY_HISTOGRAM", "HOG"])
+    feature = st.selectbox("Feature", ["RESNET50", "DINOV2", "GRAY_HISTOGRAM", "HOG"])
 
     # Dropdown 2: Clustering model
-    model = st.selectbox("Clustering model", ["KMEANS"])
+    model = st.selectbox("Clustering model", ["KMEANS", "SPECTRAL"])
 
     clustering_filename, metric_filename = _make_output_filenames(feature, model)
 

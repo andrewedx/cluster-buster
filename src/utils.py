@@ -53,12 +53,15 @@ def image_loader(datasetPath):
 
     base_images = []
     labels = []
+    category_counts = {}
 
     for label in os.listdir(datasetPath):
         label_path = os.path.join(datasetPath, label)
 
         if not os.path.isdir(label_path):
             continue
+
+        category_counts[label] = 0
 
         for img_name in os.listdir(label_path):
             img_path = os.path.join(label_path, img_name)
@@ -84,5 +87,12 @@ def image_loader(datasetPath):
 
             base_images.append(base_img)
             labels.append(label)
+            category_counts[label] += 1
+
+    # Print image counts per category
+    print("\n--- Image counts per category ---")
+    for category in sorted(category_counts.keys()):
+        print(f"{category}: {category_counts[category]} images")
+    print("-" * 32 + "\n")
 
     return base_images, labels
