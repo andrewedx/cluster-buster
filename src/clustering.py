@@ -1,104 +1,129 @@
+from __future__ import annotations
 from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score, silhouette_score
 import numpy as np
 from sklearn import metrics
 
 
 class KMeans:
-    def __init__(self, n_clusters=8, max_iter=300, random_state=None):
-        """
-        Initialise un objet KMeans.
-
-        Entrées:
-        - n_clusters (int): Le nombre de clusters à former (par défaut 8).
-        - max_iter (int): Le nombre maximum d'itérations pour l'algorithme (par défaut 300).
-        - random_state (int ou None): La graine pour initialiser le générateur de nombres aléatoires (par défaut None).
-        """
-        self.n_clusters = n_clusters
-        self.max_iter = max_iter
+    def __init__(self, n_clusters=8, max_iter=300, random_state=None, n_init=10, init="k-means++"):
+        self.n_clusters = int(n_clusters)
+        self.max_iter = int(max_iter)
         self.random_state = random_state
+        self.n_init = int(n_init)
+        self.init = init
+
         self.cluster_centers_ = None
         self.labels_ = None
+        self.inertia_ = None
 
-    def initialize_centers(self, X):
-        """
-        Initialise les centres de clusters avec n_clusters points choisis aléatoirement à partir des données X.
+    def _rng(self):
+        return np.random.default_rng(self.random_state)
 
-        Entrée:
-        - X (np.array): Les données d'entrée.
+    def _init_centers_random(self, X, rng):
+        n = X.shape[0]
+        replace = n < self.n_clusters
+        idx = rng.choice(n, size=self.n_clusters, replace=replace)
+        return X[idx].copy()
 
-        Sortie:
-        - Aucune sortie directe, mais les centres de clusters sont stockés dans self.cluster_centers_.
-        """
-        if self.random_state is not None:
-            np.random.seed(self.random_state)
-        # If there are fewer samples than clusters, allow replacement to avoid error
-        replace = False if X.shape[0] >= self.n_clusters else True
-        indecies = np.random.choice(X.shape[0], self.n_clusters, replace=replace)
-        self.cluster_centers_ = X[indecies].copy()
+    def _init_centers_kmeanspp(self, X, rng):
+        n, d = X.shape
+        centers = np.empty((self.n_clusters, d), dtype=X.dtype)
 
-    def nearest_cluster(self, X):
-        """
-        Calcule la distance euclidienne entre chaque point de X et les centres de clusters,
-        puis retourne l'indice du cluster le plus proche pour chaque point.
+        # pick first center uniformly
+        idx0 = rng.integers(0, n)
+        centers[0] = X[idx0]
 
-        Entrée:
-        - X (np.array): Les données d'entrée.
+        # squared distance to closest center for each point
+        closest_dist_sq = ((X - centers[0]) ** 2).sum(axis=1)
 
-        Sortie:
-        - np.array: Un tableau d'indices représentant le cluster le plus proche pour chaque point.
-        """
-        
-        distances = np.zeros((X.shape[0], self.n_clusters))
-        for i in range(X.shape[0]):
-            for j in range(self.n_clusters):
-                distances[i, j] = np.linalg.norm(X[i] - self.cluster_centers_[j])
-        return np.argmin(distances, axis=1)
-    
-        
+        for k in range(1, self.n_clusters):
+            # probability proportional to distance^2
+            probs = closest_dist_sq / np.sum(closest_dist_sq)
+            idx = rng.choice(n, p=probs)
+            centers[k] = X[idx]
 
-        
+            dist_sq_new_center = ((X - centers[k]) ** 2).sum(axis=1)
+            closest_dist_sq = np.minimum(closest_dist_sq, dist_sq_new_center)
+
+        return centers
+
+    def _init_centers(self, X, rng):
+        if self.init == "random":
+            return self._init_centers_random(X, rng)
+        if self.init == "k-means++":
+            return self._init_centers_kmeanspp(X, rng)
+        raise ValueError("init must be 'random' or 'k-means++'")
+
+    @staticmethod
+    def _assign_labels(X, centers):
+        # squared euclidean distances
+        dist_sq = ((X[:, None, :] - centers[None, :, :]) ** 2).sum(axis=2)
+        return dist_sq.argmin(axis=1)
+
+    @staticmethod
+    def _compute_centers(X, labels, n_clusters):
+        d = X.shape[1]
+        centers = np.empty((n_clusters, d), dtype=X.dtype)
+        for k in range(n_clusters):
+            mask = labels == k
+            if np.any(mask):
+                centers[k] = X[mask].mean(axis=0)
+            else:
+                centers[k] = np.nan  # will be handled by re-seeding
+        return centers
+
+    @staticmethod
+    def _compute_inertia(X, centers, labels):
+        diff = X - centers[labels]
+        return float(np.sum(diff * diff))
 
     def fit(self, X):
-        """
-        Exécute l'algorithme K-means sur les données X.
+        X = np.asarray(X, dtype=float)
+        if X.ndim != 2:
+            raise ValueError(f"X must be 2D, got shape {X.shape}")
 
-        Entrée:
-        - X (np.array): Les données d'entrée.
+        rng_master = self._rng()
 
-        Sortie:
-        - Aucune sortie directe, mais les centres de clusters sont stockés dans self.cluster_centers_.
-        """
-        
-        if self.cluster_centers_ is None:
-            self.initialize_centers(X)
+        best_inertia = np.inf
+        best_centers = None
+        best_labels = None
 
-        for _ in range(self.max_iter):
-            labels = self.nearest_cluster(X)
+        for run in range(self.n_init):
+            # different seed per run, reproducible if random_state provided
+            seed = None if self.random_state is None else int(rng_master.integers(0, 2**32 - 1))
+            rng = np.random.default_rng(seed)
 
-            if self.labels_ is not None and np.array_equal(labels, self.labels_):
-                print("Converged after {} iterations".format(_))
-                break
+            centers = self._init_centers(X, rng)
 
-            self.labels_ = labels
+            for _ in range(self.max_iter):
+                labels = self._assign_labels(X, centers)
+                new_centers = self._compute_centers(X, labels, self.n_clusters)
 
-            for i in range(self.n_clusters):
-                if np.any(labels == i):
-                    self.cluster_centers_[i] = X[labels == i].mean(axis=0)
-                else:
-                    self.cluster_centers_[i] = X[np.random.choice(X.shape[0])].copy()
+                # handle empty clusters by re-seeding them to random points
+                if np.isnan(new_centers).any():
+                    empty = np.isnan(new_centers).any(axis=1)
+                    idx = rng.choice(X.shape[0], size=int(empty.sum()), replace=False)
+                    new_centers[empty] = X[idx]
 
+                if np.allclose(new_centers, centers):
+                    break
+                centers = new_centers
+
+            inertia = self._compute_inertia(X, centers, labels)
+
+            if inertia < best_inertia:
+                best_inertia = inertia
+                best_centers = centers.copy()
+                best_labels = labels.copy()
+
+        self.cluster_centers_ = best_centers
+        self.labels_ = best_labels
+        self.inertia_ = best_inertia
+        return self
 
     def predict(self, X):
-        """
-        Prédit l'appartenance aux clusters pour les données X en utilisant les centres de clusters appris pendant l'entraînement.
-
-        Entrée:
-        - X (np.array): Les données d'entrée.
-
-        Sortie:
-        - np.array: Un tableau d'indices représentant le cluster prédit pour chaque point.
-        """
-        return self.nearest_cluster(X)
+        X = np.asarray(X, dtype=float)
+        return self._assign_labels(X, self.cluster_centers_)
 
 
 
