@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import os
+import sys
+import time
+import threading
 import pandas as pd
 
 from sklearn.preprocessing import LabelEncoder, normalize, StandardScaler
-from sklearn.cluster import SpectralClustering
+from sklearn.cluster import SpectralClustering, AgglomerativeClustering
 from sklearn.mixture import GaussianMixture   
 from sklearn.decomposition import PCA
 
@@ -12,8 +15,59 @@ from features import *
 from clustering import *
 from resnet import compute_dinov2_descriptors, compute_resnet50_descriptors
 from sift import compute_sift_descriptors
+from glcm import compute_glcm_descriptors_base_images
+
 from utils import *
 from constant import *
+
+
+class Spinner:
+    """Terminal spinner with message support."""
+    def __init__(self):
+        self.busy = False
+        self.chars = ['|', '/', '-', '\\']
+        self.index = 0
+        self.paused = False
+        
+    def start(self):
+        self.busy = True
+        self.paused = False
+        threading.Thread(target=self._spin, daemon=True).start()
+        
+    def _spin(self):
+        while self.busy:
+            if not self.paused:
+                sys.stdout.write(self.chars[self.index % 4])
+                sys.stdout.flush()
+                sys.stdout.write('\b')
+                time.sleep(0.1)
+                self.index += 1
+            else:
+                time.sleep(0.05)
+            
+    def pause(self):
+        """Pause the spinner for printing messages."""
+        self.paused = True
+        time.sleep(0.15)
+        sys.stdout.write(' \b')
+        sys.stdout.flush()
+        
+    def resume(self):
+        """Resume the spinner after printing."""
+        self.paused = False
+        
+    def message(self, msg: str):
+        """Print a message while pausing the spinner."""
+        self.pause()
+        print(msg)
+        self.resume()
+            
+    def stop(self):
+        self.busy = False
+        time.sleep(0.15)
+        sys.stdout.write(' ')
+        sys.stdout.flush()
+        sys.stdout.write('\b')
 
 
 FEATURES = [
@@ -21,13 +75,14 @@ FEATURES = [
     "dinov2", 
     "gray_histogram", 
     "hog", 
-    "sift"
+    "sift",
+    "glcm"
     ]  # add new features here
 MODELS = [
-    # "kmeans", 
-    # "spectral", 
-    "gmm_full", 
-    "gmm_diag"
+    "kmeans", 
+    "spectral", 
+    "gmm_diag",
+    "agglomerative"
     ]  # add new clustering models here
 
 
@@ -72,12 +127,12 @@ def _preprocess_descriptors(feature: str, descriptors, pca_components: int):
     """
     X = descriptors
 
-    # Skip PCA for HOG and SIFT, but do StandardScaler
-    if feature == "hog" or feature == "sift":
+    # StandardScaler for features with heterogeneous scales, no PCA
+    if feature in ("hog", "sift", "glcm"):
         X = StandardScaler().fit_transform(X)
 
-    # Skip PCA for histograms
-    if feature == "gray_histogram":
+    # Skip PCA for low-dimensional descriptors
+    if feature in ("gray_histogram", "glcm"):
         X_pca = X
         pca = None
     else:
@@ -96,6 +151,10 @@ def _run_one(
     labels_true_encoded,
     pca_components: int = 64,
 ):
+    spinner = Spinner()
+    spinner.start()
+    spinner.message(f"◆ Processing [{feature}/{model}]...")
+    
     # -------- Feature extraction --------
     if feature == "resnet50":
         descriptors = compute_resnet50_descriptors(base_images)
@@ -107,11 +166,13 @@ def _run_one(
         descriptors = compute_hog_descriptors_base_images(base_images)
     elif feature == "sift":
         descriptors = compute_sift_descriptors(base_images)
+    elif feature == "glcm":
+        descriptors = compute_glcm_descriptors_base_images(base_images)
     else:
         raise ValueError(f"Unknown feature: {feature}")
 
     descriptors = np.asarray(descriptors, dtype=np.float32)
-    print(f"[{feature}/{model}] descriptors shape: {descriptors.shape}")
+    spinner.message(f"▶ [{feature}/{model}] descriptors shape: {descriptors.shape}")
 
     # -------- Preprocess: (optional scaling) + (safe PCA) + L2 --------
     descriptors_norm, pca = _preprocess_descriptors(feature, descriptors, pca_components)
@@ -119,12 +180,12 @@ def _run_one(
     if pca is not None:
         explained = float(pca.explained_variance_ratio_.sum())
         used_components = int(pca.n_components_)
-        print(f"[{feature}/{model}] PCA components used: {used_components} (requested {pca_components})")
-        print(f"[{feature}/{model}] explained variance sum: {explained:.4f}")
+        spinner.message(f"▶ [{feature}/{model}] PCA components used: {used_components} (requested {pca_components})")
+        spinner.message(f"▶ [{feature}/{model}] explained variance sum: {explained:.4f}")
     else:
         explained = None
         used_components = None
-        print(f"[{feature}/{model}] PCA skipped")
+        spinner.message(f"▶ [{feature}/{model}] PCA skipped")
 
     # -------- Clustering --------
     number_cluster = len(set(labels_true_encoded))
@@ -141,8 +202,6 @@ def _run_one(
         labels_pred = clusterer.labels_
 
     elif model == "spectral":
-        # SpectralClustering returns labels directly (no .fit_predict stored labels_)
-        # Note: n_neighbors must be < n_samples
         n_neighbors = min(20, descriptors_norm.shape[0] - 1)
 
         clusterer = SpectralClustering(
@@ -154,18 +213,7 @@ def _run_one(
         )
         labels_pred = clusterer.fit_predict(descriptors_norm)
 
-    elif model == "gmm_full":                                        # ✅ AJOUT
-        clusterer = GaussianMixture(
-            n_components=number_cluster,
-            covariance_type="full",
-            n_init=5,
-            max_iter=300,
-            random_state=42,
-        )
-        clusterer.fit(descriptors_norm)
-        labels_pred = clusterer.predict(descriptors_norm)
-
-    elif model == "gmm_diag":                                        # ✅ AJOUT
+    elif model == "gmm_diag":
         clusterer = GaussianMixture(
             n_components=number_cluster,
             covariance_type="diag",
@@ -176,8 +224,17 @@ def _run_one(
         clusterer.fit(descriptors_norm)
         labels_pred = clusterer.predict(descriptors_norm)
 
+    elif model == "agglomerative":
+        clusterer = AgglomerativeClustering(
+            n_clusters=number_cluster,
+            linkage="ward",
+        )
+        labels_pred = clusterer.fit_predict(descriptors_norm)
+
     else:
         raise ValueError(f"Unknown model: {model}")
+
+    spinner.message(f"▶ [{feature}/{model}] Clustering complete, computing metrics...")
 
     # -------- Metrics --------
     metric = show_metric(
@@ -210,8 +267,9 @@ def _run_one(
     df_cluster.to_excel(os.path.join(PATH_OUTPUT, clustering_filename), index=False)
     pd.DataFrame([metric]).to_excel(os.path.join(PATH_OUTPUT, metric_filename), index=False)
 
-    print(f"[{feature}/{model}] wrote: {clustering_filename}")
-    print(f"[{feature}/{model}] wrote: {metric_filename}")
+    spinner.stop()
+    spinner.message(f"✓ [{feature}/{model}] wrote: {clustering_filename}")
+    spinner.message(f"✓ [{feature}/{model}] wrote: {metric_filename}")
 
 
 def pipeline():
