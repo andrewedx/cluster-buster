@@ -3,9 +3,12 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import plotly.express as px
+import plotly.graph_objects as go
 from PIL import Image
+import json
 
 from constant import PATH_OUTPUT
+from silhouette_sweep import get_sweep_filename, load_sweep_results
 
 st.set_page_config(page_title="Cluster Buster Dashboard", layout="wide")
 
@@ -80,6 +83,50 @@ def plot_metric(metric_df: pd.DataFrame):
     return fig
 
 
+@st.cache_data
+def load_silhouette_sweep(feature: str, model: str) -> dict | None:
+    """Load silhouette sweep results for given feature/model."""
+    return load_sweep_results(feature, model, PATH_OUTPUT)
+
+
+def plot_silhouette_sweep(sweep_results: dict) -> go.Figure | None:
+    """
+    Plot silhouette scores across different cluster counts.
+    
+    Args:
+        sweep_results: Dictionary with cluster counts as keys and scores as values
+        
+    Returns:
+        Plotly figure or None if no data
+    """
+    if not sweep_results:
+        return None
+    
+    # Sort by cluster count
+    cluster_counts = sorted([int(k) for k in sweep_results.keys()])
+    scores = [sweep_results[str(k)] for k in cluster_counts]
+    
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=cluster_counts,
+        y=scores,
+        mode='lines+markers',
+        name='Silhouette Score',
+        line=dict(color='#1f77b4', width=2),
+        marker=dict(size=8)
+    ))
+    
+    fig.update_layout(
+        title="Silhouette Score Sweep",
+        xaxis_title="Number of Clusters",
+        yaxis_title="Silhouette Score",
+        height=500,
+        hovermode='x unified',
+    )
+    
+    return fig
+
+
 # -----------------------------
 # UI
 # -----------------------------
@@ -132,7 +179,7 @@ with st.sidebar:
 # -----------------------------
 # Tabs
 # -----------------------------
-tab1, tab2 = st.tabs(["Analyse par cluster", "Analyse globale"])
+tab1, tab2, tab3 = st.tabs(["Analyse par cluster", "Analyse globale", "Silhouette Sweep"])
 
 # -----------------------------
 # Tab 1: Cluster view
@@ -253,3 +300,30 @@ with tab2:
             st.plotly_chart(fig_radar, use_container_width=True)
 
         st.dataframe(df_metric, use_container_width=True)
+
+# -----------------------------
+# Tab 3: Silhouette Sweep
+# -----------------------------
+with tab3:
+    st.subheader(f"Silhouette Score Sweep — Feature={feature}, Model={model}")
+    
+    # Load silhouette sweep results
+    sweep_results = load_silhouette_sweep(feature, model)
+    
+    if sweep_results is None:
+        st.warning(
+            "Silhouette sweep data not found.\n\n"
+            "Make sure the pipeline has been run with the current version that computes silhouette sweeps."
+        )
+    else:
+        fig_sweep = plot_silhouette_sweep(sweep_results)
+        if fig_sweep is not None:
+            st.plotly_chart(fig_sweep, use_container_width=True)
+        
+        # Display raw data
+        st.write("### Silhouette Scores by Cluster Count")
+        sweep_df = pd.DataFrame({
+            "Cluster Count": sorted([int(k) for k in sweep_results.keys()]),
+            "Silhouette Score": [sweep_results[str(k)] for k in sorted([int(k) for k in sweep_results.keys()])]
+        })
+        st.dataframe(sweep_df, use_container_width=True, hide_index=True)

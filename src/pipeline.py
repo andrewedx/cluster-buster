@@ -16,6 +16,7 @@ from clustering import *
 from resnet import compute_dinov2_descriptors, compute_resnet50_descriptors
 from sift import compute_sift_descriptors
 from glcm import compute_glcm_descriptors_base_images
+from silhouette_sweep import compute_silhouette_sweep, save_sweep_results
 
 from utils import *
 from constant import *
@@ -235,6 +236,12 @@ def _run_one(
         raise ValueError(f"Unknown model: {model}")
 
     spinner.message(f"▶ [{feature}/{model}] Clustering complete, computing metrics...")
+
+    # -------- Silhouette sweep (for dashboard graph) --------
+    spinner.message(f"▶ [{feature}/{model}] Computing silhouette sweep...")
+    sweep_results = compute_silhouette_sweep(feature, model, descriptors_norm, PATH_OUTPUT)
+    save_sweep_results(feature, model, sweep_results, PATH_OUTPUT)
+    spinner.message(f"▶ [{feature}/{model}] Silhouette sweep saved")
 
     # -------- Metrics --------
     metric = show_metric(
