@@ -89,7 +89,7 @@ with st.sidebar:
     st.header("Settings")
 
     # Dropdown 1: Feature extractor
-    feature = st.selectbox("Feature", ["RESNET50", "DINOV2", "GRAY_HISTOGRAM", "HOG"])
+    feature = st.selectbox("Feature", ["RESNET50", "DINOV2", "GRAY_HISTOGRAM", "HOG", "SIFT"])
 
     # Dropdown 2: Clustering model
     model = st.selectbox("Clustering model", ["KMEANS", "SPECTRAL"])
