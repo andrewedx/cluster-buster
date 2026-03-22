@@ -10,11 +10,12 @@ from sklearn.decomposition import PCA
 from features import *
 from clustering import *
 from resnet import compute_dinov2_descriptors, compute_resnet50_descriptors
+from sift import compute_sift_descriptors
 from utils import *
 from constant import *
 
 
-FEATURES = ["resnet50", "dinov2", "gray_histogram", "hog"]  # add new features here
+FEATURES = ["resnet50", "dinov2", "gray_histogram", "hog", "sift"]  # add new features here
 MODELS = ["kmeans", "spectral"]  # add new clustering models here
 
 
@@ -52,17 +53,18 @@ def _safe_pca_transform(X, n_components: int, *, random_state: int = 42):
 def _preprocess_descriptors(feature: str, descriptors, pca_components: int):
     """
     Feature-specific preprocessing rules:
-    - gray_histogram: skip PCA by default (very low-dim), do L2 on raw hist
+    - gray_histogram: skip PCA by default (very low-dim), do L2 on raw histogram
     - hog: StandardScaler helps, PCA optional but must be safe
+    - sift: StandardScaler helps, PCA optional but must be safe
     - dinov2/resnet50: PCA + L2 is recommended
     """
     X = descriptors
 
-    # Skip PCA for HOG, but do StandardScaler
-    if feature == "hog":
+    # Skip PCA for HOG and SIFT, but do StandardScaler
+    if feature == "hog" or feature == "sift":
         X = StandardScaler().fit_transform(X)
 
-    # Skip PCA for histogram
+    # Skip PCA for histograms
     if feature == "gray_histogram":
         X_pca = X
         pca = None
@@ -91,6 +93,8 @@ def _run_one(
         descriptors = compute_gray_histograms_base_images(base_images, n_bins=16)
     elif feature == "hog":
         descriptors = compute_hog_descriptors_base_images(base_images)
+    elif feature == "sift":
+        descriptors = compute_sift_descriptors(base_images)
     else:
         raise ValueError(f"Unknown feature: {feature}")
 
