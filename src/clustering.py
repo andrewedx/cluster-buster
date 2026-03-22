@@ -146,7 +146,6 @@ def show_metric(labels_true, labels_pred, descriptors,bool_return=False,name_des
     - dictionnaire contenant les métriques d'évaluation des clusters
     """
     homogeneity, completeness, v_measure = metrics.homogeneity_completeness_v_measure(labels_true, labels_pred)
-    jaccard = metrics.jaccard_score(labels_true, labels_pred, average='macro')
     ami = metrics.adjusted_mutual_info_score(labels_true, labels_pred)
     silhouette = silhouette_score(descriptors, labels_pred)
     ari = adjusted_rand_score(labels_true, labels_pred)
@@ -154,7 +153,6 @@ def show_metric(labels_true, labels_pred, descriptors,bool_return=False,name_des
     if bool_show :
         print(f"########## Métrique descripteur : {name_descriptor}")
         print(f"Adjusted Rand Index: {ari}")
-        print(f"Jaccard Index: {jaccard}")
         print(f"Homogeneity: {homogeneity}")
         print(f"Completeness: {completeness}")
         print(f"V-measure: {v_measure}")
@@ -167,6 +165,5 @@ def show_metric(labels_true, labels_pred, descriptors,bool_return=False,name_des
                 "homogeneity":homogeneity,
                 "completeness":completeness,
                 "v_measure":v_measure, 
-                "jaccard":jaccard,
                "descriptor":name_descriptor,
                "name_model":name_model}

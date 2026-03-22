@@ -92,7 +92,7 @@ with st.sidebar:
     feature = st.selectbox("Feature", ["RESNET50", "DINOV2", "GRAY_HISTOGRAM", "HOG", "SIFT"])
 
     # Dropdown 2: Clustering model
-    model = st.selectbox("Clustering model", ["KMEANS", "SPECTRAL"])
+    model = st.selectbox("Clustering model", ["KMEANS", "SPECTRAL", "GMM_FULL", "GMM_DIAG"])
 
     clustering_filename, metric_filename = _make_output_filenames(feature, model)
 

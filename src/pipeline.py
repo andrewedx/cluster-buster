@@ -5,6 +5,7 @@ import pandas as pd
 
 from sklearn.preprocessing import LabelEncoder, normalize, StandardScaler
 from sklearn.cluster import SpectralClustering
+from sklearn.mixture import GaussianMixture   
 from sklearn.decomposition import PCA
 
 from features import *
@@ -15,8 +16,19 @@ from utils import *
 from constant import *
 
 
-FEATURES = ["resnet50", "dinov2", "gray_histogram", "hog", "sift"]  # add new features here
-MODELS = ["kmeans", "spectral"]  # add new clustering models here
+FEATURES = [
+    "resnet50",
+    "dinov2", 
+    "gray_histogram", 
+    "hog", 
+    "sift"
+    ]  # add new features here
+MODELS = [
+    # "kmeans", 
+    # "spectral", 
+    "gmm_full", 
+    "gmm_diag"
+    ]  # add new clustering models here
 
 
 def _make_output_filenames(feature: str, model: str) -> tuple[str, str]:
@@ -141,6 +153,28 @@ def _run_one(
             random_state=42,
         )
         labels_pred = clusterer.fit_predict(descriptors_norm)
+
+    elif model == "gmm_full":                                        # ✅ AJOUT
+        clusterer = GaussianMixture(
+            n_components=number_cluster,
+            covariance_type="full",
+            n_init=5,
+            max_iter=300,
+            random_state=42,
+        )
+        clusterer.fit(descriptors_norm)
+        labels_pred = clusterer.predict(descriptors_norm)
+
+    elif model == "gmm_diag":                                        # ✅ AJOUT
+        clusterer = GaussianMixture(
+            n_components=number_cluster,
+            covariance_type="diag",
+            n_init=5,
+            max_iter=300,
+            random_state=42,
+        )
+        clusterer.fit(descriptors_norm)
+        labels_pred = clusterer.predict(descriptors_norm)
 
     else:
         raise ValueError(f"Unknown model: {model}")
