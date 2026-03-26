@@ -1,3 +1,5 @@
+"""Gray-level histogram and HOG (Histogram of Oriented Gradients) feature extraction."""
+
 import numpy as np
 import cv2
 from skimage.feature import hog
@@ -5,8 +7,13 @@ from skimage.feature import hog
 
 def _to_gray_uint8_from_base_image(item: dict) -> np.ndarray:
     """
-    base_images[i]["data"] is float32 RGB in [0,1], shape (H,W,3).
-    Convert to grayscale uint8 (H,W) in [0,255] for histogram/HOG.
+    Convert base image to grayscale uint8.
+    
+    Args:
+        item: Dictionary with 'data' key containing float32 RGB in [0,1], shape (H,W,3)
+        
+    Returns:
+        Grayscale uint8 image, shape (H,W) in [0,255]
     """
     x = np.asarray(item["data"])
     if x.ndim != 3 or x.shape[-1] != 3:
@@ -24,9 +31,17 @@ def _to_gray_uint8_from_base_image(item: dict) -> np.ndarray:
 
 def compute_gray_histograms_base_images(base_images: list[dict], n_bins: int = 16) -> np.ndarray:
     """
-    Gray-level histogram descriptors for base_images (pipeline-compatible).
+    Compute gray-level histogram descriptors for images.
+    
+    A simple and efficient feature that captures the distribution of pixel
+    intensities. Useful as a baseline feature for image classification.
 
-    Returns: (N, n_bins) float32, L1-normalized histograms.
+    Args:
+        base_images: List of dictionaries with 'data' key containing float32 RGB images in [0,1]
+        n_bins: Number of histogram bins (default: 16)
+
+    Returns:
+        np.ndarray of shape (n_images, n_bins), float32, L1-normalized histograms
     """
     if base_images is None or len(base_images) == 0:
         return np.empty((0, n_bins), dtype=np.float32)
@@ -55,10 +70,23 @@ def compute_hog_descriptors_base_images(
     cells_per_block: tuple[int, int] = (2, 2),
 ) -> np.ndarray:
     """
-    HOG descriptors for base_images (pipeline-compatible).
+    Compute HOG (Histogram of Oriented Gradients) descriptors for images.
+    
+    HOG captures edge and shape information through the distribution of gradient
+    orientations. Effective for object and shape recognition.
+    
+    Important: HOG requires consistent image size for all samples, so images
+    are resized to `resize_to` dimensions.
 
-    Important: HOG requires same image size for all samples.
-    So we resize each image to `resize_to`.
+    Args:
+        base_images: List of dictionaries with 'data' key containing float32 RGB images in [0,1]
+        resize_to: Target image size (default: 128x128)
+        orientations: Number of gradient orientations (default: 8)
+        pixels_per_cell: Size of cells in pixels (default: 8x8)
+        cells_per_block: Number of cells per block for normalization (default: 2x2)
+
+    Returns:
+        np.ndarray of shape (n_images, descriptor_length), float32
     """
     if base_images is None or len(base_images) == 0:
         return np.empty((0, 0), dtype=np.float32)
@@ -67,7 +95,7 @@ def compute_hog_descriptors_base_images(
     for item in base_images:
         gray = _to_gray_uint8_from_base_image(item)
 
-        # ensure fixed size for consistent descriptor length
+        # Ensure fixed size for consistent descriptor length
         if resize_to is not None:
             gray = cv2.resize(gray, resize_to, interpolation=cv2.INTER_AREA)
 

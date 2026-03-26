@@ -1,12 +1,27 @@
-numpy
-opencv-python
-pandas
-plotly==5.9.0
-scikit-image
-scikit-learn
-streamlit==1.31.1
-tensorflow
-matplotlib
-openpyxl
-torch
-torchvision
+# Core data science libraries
+numpy>=1.21.0
+pandas>=1.3.0
+scikit-learn>=1.0.0
+scikit-image>=0.18.0
+
+# Deep learning frameworks
+tensorflow>=2.9.0
+torch>=1.11.0
+torchvision>=0.12.0
+
+# Image processing
+opencv-python>=4.5.0
+Pillow>=8.0.0
+
+# Visualization
+matplotlib>=3.4.0
+plotly>=5.9.0
+
+# Streamlit dashboard
+streamlit>=1.31.1
+
+# Excel support
+openpyxl>=3.0.0
+
+# Additional utilities
+Pillow>=8.0.0

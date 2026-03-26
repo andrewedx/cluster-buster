@@ -1,3 +1,5 @@
+"""GLCM (Gray-Level Co-occurrence Matrix) texture feature extraction."""
+
 import numpy as np
 import cv2
 from skimage.feature import graycomatrix, graycoprops
@@ -5,8 +7,13 @@ from skimage.feature import graycomatrix, graycoprops
 
 def _to_gray_uint8_from_base_image(item: dict) -> np.ndarray:
     """
-    base_images[i]["data"] is float32 RGB in [0,1], shape (H,W,3).
-    Convert to grayscale uint8 (H,W) in [0,255] for GLCM.
+    Convert base image to grayscale uint8.
+    
+    Args:
+        item: Dictionary with 'data' key containing float32 RGB in [0,1], shape (H,W,3)
+        
+    Returns:
+        Grayscale uint8 image, shape (H,W) in [0,255]
     """
     x = np.asarray(item["data"])
     if x.ndim != 3 or x.shape[-1] != 3:
@@ -30,18 +37,22 @@ def compute_glcm_descriptors_base_images(
     levels: int = 256,
 ) -> np.ndarray:
     """
-    Compute GLCM (Gray Level Co-occurrence Matrix) descriptors for base_images (pipeline-compatible).
+    Compute GLCM (Gray Level Co-occurrence Matrix) texture descriptors.
 
+    GLCM captures spatial relationships between pixel intensities, useful for
+    texture-based image classification.
+    
     Expects base_images[i]["data"] as float32 RGB in [0,1], shape (H, W, 3).
 
     Args:
         base_images: List of dictionaries with 'data' key containing float32 RGB images
         distances: List of distances for GLCM computation (default: [1])
-        angles: List of angles (in radians) for GLCM computation (default: [0])
+        angles: List of angles in radians for GLCM computation (default: [0])
         levels: Number of gray levels to quantize to (default: 256)
 
     Returns:
         np.ndarray of shape (n_images, n_features), float32.
+        Features: contrast, dissimilarity, homogeneity, energy, correlation, ASM
     """
     if distances is None:
         distances = [1]

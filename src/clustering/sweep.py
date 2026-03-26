@@ -1,7 +1,4 @@
-"""
-Silhouette score sweep for multiple cluster counts.
-Computes and caches silhouette-sweep results for each feature/model combination.
-"""
+"""Silhouette score sweep analysis for multiple cluster counts."""
 
 import json
 import os
@@ -9,15 +6,26 @@ from pathlib import Path
 
 import numpy as np
 from sklearn.metrics import silhouette_score
-from sklearn.cluster import KMeans, SpectralClustering, AgglomerativeClustering
+from sklearn.cluster import SpectralClustering, AgglomerativeClustering
 from sklearn.mixture import GaussianMixture
+
+from .kmeans import KMeans
 
 
 CLUSTER_COUNTS = [5, 10, 15, 20, 25]
 
 
 def get_sweep_filename(feature: str, model: str) -> str:
-    """Get filename for sweep results cache."""
+    """
+    Generate filename for sweep results cache.
+    
+    Args:
+        feature: Feature name
+        model: Clustering model name
+        
+    Returns:
+        Filename following naming convention: sweep_silhouette__<feature>__<model>.json
+    """
     feature_key = feature.lower()
     model_key = model.lower()
     return f"sweep_silhouette__{feature_key}__{model_key}.json"
@@ -32,14 +40,18 @@ def compute_silhouette_sweep(
     """
     Compute silhouette scores for multiple cluster counts.
     
+    Tests clustering quality across different cluster numbers to help identify
+    the optimal number of clusters. Higher silhouette scores indicate better
+    cluster separation and cohesion.
+    
     Args:
-        feature: Feature name
+        feature: Feature descriptor name
         model: Clustering model name
-        descriptors_norm: Normalized descriptor array
+        descriptors_norm: Normalized descriptor array of shape (n_samples, n_features)
         output_dir: Directory to save results
         
     Returns:
-        Dictionary with cluster counts as keys and silhouette scores as values
+        Dictionary with cluster counts as string keys and silhouette scores as float values
     """
     results = {}
     
@@ -120,7 +132,15 @@ def save_sweep_results(
     sweep_results: dict,
     output_dir: str,
 ) -> None:
-    """Save sweep results to JSON file."""
+    """
+    Save sweep results to JSON file.
+    
+    Args:
+        feature: Feature descriptor name
+        model: Clustering model name
+        sweep_results: Dictionary of sweep results
+        output_dir: Output directory path
+    """
     os.makedirs(output_dir, exist_ok=True)
     filename = get_sweep_filename(feature, model)
     filepath = os.path.join(output_dir, filename)
@@ -134,7 +154,17 @@ def load_sweep_results(
     model: str,
     output_dir: str,
 ) -> dict | None:
-    """Load sweep results from JSON file."""
+    """
+    Load sweep results from JSON file.
+    
+    Args:
+        feature: Feature descriptor name
+        model: Clustering model name
+        output_dir: Output directory path
+        
+    Returns:
+        Dictionary of sweep results or None if file not found
+    """
     filename = get_sweep_filename(feature, model)
     filepath = os.path.join(output_dir, filename)
     

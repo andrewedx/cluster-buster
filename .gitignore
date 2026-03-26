@@ -32,6 +32,7 @@ Thumbs.db
 
 # Output files
 output/
+output_train/
 *.log
 
 # Jupyter Notebook checkpoints

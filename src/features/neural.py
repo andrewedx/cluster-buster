@@ -60,9 +60,6 @@ def compute_resnet50_descriptors(
     return np.concatenate(feats, axis=0).astype(np.float32)
 
 
-
-
-
 @torch.inference_mode()
 def compute_dinov2_descriptors(
     base_images: list[dict],
@@ -121,8 +118,6 @@ def compute_dinov2_descriptors(
         batch = torch.stack(batch_tensors, dim=0).to(device)  # (B, 3, S, S)
 
         # 3) Forward to get a single embedding per image
-        # DINOv2 hub models usually provide forward_features() with CLS token features.
-        # We'll be conservative: handle both possibilities.
         if hasattr(model, "forward_features"):
             y = model.forward_features(batch)
             # Typical key: "x_norm_clstoken" => (B, D)
